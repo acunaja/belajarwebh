@@ -1,0 +1,316 @@
+<!DOCTYPE html>
+<html lang="id">  
+<head>  
+<meta charset="UTF-8">  
+<meta name="viewport" content="width=device-width, initial-scale=1.0">  
+<title>FIKI BROS</title>  
+<style>  
+*{box-sizing:border-box}  
+body{margin:0;font-family:monospace;overflow:hidden;background:#3b82f6}
+
+#menu{text-align:center;padding-top:60px;color:white}
+#menu button{font-size:22px;padding:15px 40px;margin:8px}
+
+#gameBox{display:none;width:100vw;height:100vh;position:relative}
+canvas{width:100vw;height:100vh;image-rendering:pixelated}
+
+#hud{
+position:absolute;top:10px;left:10px;
+color:white;font-size:18px;
+text-shadow:2px 2px #000;z-index:5
+}
+
+#overlay, #pauseOverlay{
+position:absolute;inset:0;
+background:rgba(0,0,0,.75);
+display:none;align-items:center;justify-content:center;
+flex-direction:column;color:white;font-size:42px;z-index:10
+}
+#overlay button, #pauseOverlay button{
+margin-top:20px;font-size:22px;padding:12px 30px;
+}
+
+/* Tombol pause */
+#pauseBtn{
+position:absolute;
+top:10px;
+right:10px;
+width:60px;
+height:60px;
+font-size:18px;
+font-weight:bold;
+border-radius:50%;
+background:radial-gradient(#444,#000);
+color:#fff;
+border:4px solid #fff;
+box-shadow:0 6px 0 #222;
+z-index:20;
+}
+
+/* Kontrol HP */
+.controls {
+position: fixed;
+bottom: 20px;
+width: 100%;
+display: flex;
+justify-content: space-between;
+padding: 0 20px;
+z-index: 20;
+}
+
+.control {
+display: flex;
+flex-direction: row;
+gap: 20px;
+}
+
+.control button{
+width: 80px;
+height: 80px;
+font-size: 20px;
+font-weight: bold;
+border-radius: 50%;
+background: radial-gradient(#444,#000);
+color: #fff;
+border: 4px solid #fff;
+box-shadow: 0 6px 0 #222;
+}
+
+.control button:active{
+transform: translateY(5px);
+box-shadow: 0 3px 0 #000;
+}
+
+@media (min-width: 600px){
+.control button{
+width:100px;
+height:100px;
+font-size:26px;
+}
+}
+</style>
+</head>  
+<body>  
+<div id="menu">  
+  <h1>🍄 FIKI BROS</h1>  
+  <h3>Pilih Level</h3>  
+  <button onclick="startGame('easy')">EASY</button>  
+  <button onclick="startGame('normal')">NORMAL</button>  
+  <button onclick="startGame('hard')">HARD</button>  
+</div>  
+
+<div id="gameBox">  
+<canvas id="game"></canvas>  
+
+<div id="hud">  
+❤️ <span id="lives"></span>/5 |  
+🔫 <span id="ammo"></span><br>  
+⭐ Score: <span id="score"></span><br>  
+🏆 High Score: <span id="highscore"></span>  
+</div>  
+
+<button id="pauseBtn" onclick="togglePause()">⏸</button>
+
+<div id="overlay">  
+  <div>GAME OVER</div>  
+  <button onclick="restart()">RESTART</button>  
+  <button onclick="backMenu()">MENU</button>  
+</div>  
+
+<div id="pauseOverlay">  
+  <div>PAUSED</div>  
+  <button onclick="resumeGame()">PLAY</button>  
+  <button onclick="restart()">REPLAY</button>  
+  <button onclick="backMenu()">MENU</button>  
+</div>  
+
+<!-- Tombol kontrol horizontal -->
+<div class="controls">
+  <!-- Tombol kiri/kanan -->
+  <div class="control left-control">
+    <button ontouchstart="left=true" ontouchend="left=false">◀</button>
+    <div style="width:20px;"></div>
+    <button ontouchstart="right=true" ontouchend="right=false">▶</button>
+  </div>
+  <!-- Tombol SHOOT / JUMP -->
+  <div class="control right-control">
+    <button ontouchstart="shoot()">SHOOT</button>
+    <button ontouchstart="jump()">JUMP</button>
+  </div>
+</div>  
+
+<audio id="bgMusic" loop>  
+  <source src="slow_music.mp3" type="audio/mpeg">  
+  Browser tidak mendukung audio.  
+</audio>  
+<audio id="jumpSound">  
+  <source src="jump_sound.mp3" type="audio/mpeg">  
+</audio>  
+</div>  
+
+<script>  
+const c=document.getElementById("game");  
+const ctx=c.getContext("2d");  
+const menu=document.getElementById("menu");  
+const gameBox=document.getElementById("gameBox");  
+const overlay=document.getElementById("overlay");  
+const pauseOverlay=document.getElementById("pauseOverlay");  
+const bgMusic=document.getElementById("bgMusic");  
+const jumpSound=document.getElementById("jumpSound");  
+
+function resize(){c.width=innerWidth;c.height=innerHeight}  
+onresize=resize;resize();  
+
+const groundHeight=200; // ground lebih tinggi  
+const MAX_LIVES=5;  
+let left=false,right=false,gameOver=false,paused=false;  
+let frame=0,spawnTimer=0,itemTimer=0;  
+let enemyCooldown=600;  
+
+let player;  
+let lives=MAX_LIVES, ammo=25;  
+let enemies=[],bullets=[],items=[];  
+let lastShootTime=0;  
+const SHOOT_DELAY=5;  
+
+let level='easy';  
+let score=0;  
+let highScore=0;  
+
+function startGame(lvl){  
+  level=lvl;  
+  enemyCooldown = (level==='easy'?600:level==='normal'?300:60);  
+  highScore = localStorage.getItem("fikiHighScore_"+level)||0;  
+  menu.style.display="none";  
+  gameBox.style.display="block";  
+  paused=false; pauseOverlay.style.display="none";  
+  bgMusic.play();  
+  restart();  
+}  
+
+function backMenu(){  
+  gameBox.style.display="none"; menu.style.display="block";  
+  paused=false; pauseOverlay.style.display="none";  
+  bgMusic.pause(); bgMusic.currentTime=0;  
+}  
+
+function restart(){  
+  lives=MAX_LIVES; ammo=25; score=0;  
+  livesSpan.innerText=lives;  
+  ammoSpan.innerText=ammo;  
+  scoreSpan.innerText=score;  
+  highSpan.innerText=highScore;  
+  gameOver=false; paused=false;  
+  overlay.style.display="none"; pauseOverlay.style.display="none";  
+  player={x:c.width/2,y:c.height-groundHeight-50,w:34,h:50,vx:0,vy:0,onGround:false,dir:1};  
+  enemies=[]; bullets=[]; items=[]; spawnTimer=0; itemTimer=0;  
+  requestAnimationFrame(loop);  
+}  
+
+function togglePause(){  
+  if(gameOver) return;  
+  paused=!paused;  
+  pauseOverlay.style.display=paused?"flex":"none";  
+  if(paused) bgMusic.pause(); else bgMusic.play();  
+}  
+function resumeGame(){ paused=false; pauseOverlay.style.display="none"; bgMusic.play(); requestAnimationFrame(loop); }  
+
+function jump(){  
+  if(player.onGround){ player.vy=-14; player.onGround=false; jumpSound.currentTime=0; jumpSound.play(); }  
+}  
+function shoot(){  
+  let now=Date.now();  
+  if(now-lastShootTime<SHOOT_DELAY || ammo<=0) return;  
+  lastShootTime=now; ammo--; ammoSpan.innerText=ammo;  
+  bullets.push({x:player.x+player.w/2,y:player.y+20,dir:player.dir});  
+}  
+
+function loop(){ if(gameOver||paused) return; update(); draw(); requestAnimationFrame(loop); }  
+
+function update(){  
+  frame++; spawnTimer++; itemTimer++;  
+  player.vx=0;  
+  if(left){player.vx=-2;player.dir=-1;}  
+  if(right){player.vx=2;player.dir=1;}  
+  player.x+=player.vx; player.y+=player.vy; player.vy+=0.8;  
+  let groundY=c.height-groundHeight;  
+  if(player.y+player.h>=groundY){ player.y=groundY-player.h; player.vy=0; player.onGround=true; }else player.onGround=false;  
+
+  if(spawnTimer>enemyCooldown){ spawnEnemy(); spawnTimer=0; }  
+  if(itemTimer>600 && items.length===0){ spawnItem(); itemTimer=0; }  
+
+  enemies.forEach((e,i)=>{  
+    e.frame++; e.x+=e.dir*0.6;  
+    if(hit(player,e)){  
+      if(player.vy>0){ killEnemy(i); player.vy=-10; }else damage();  
+    }  
+  });  
+
+  bullets.forEach((b,bi)=>{  
+    b.x+=b.dir*6;  
+    enemies.forEach((e,ei)=>{  
+      if(hit({x:b.x,y:b.y,w:6,h:4},e)){  
+        bullets.splice(bi,1); killEnemy(ei);  
+      }  
+    });  
+  });  
+
+  items.forEach((it,ii)=>{  
+    if(hit(player,it)){  
+      if(it.type==="heart"){ if(lives<MAX_LIVES){ lives++; livesSpan.innerText=lives; } }  
+      else{ ammo+=10; ammoSpan.innerText=ammo; }  
+      items.splice(ii,1);  
+    }  
+  });  
+}  
+
+function spawnEnemy(){  
+  let fromLeft=Math.random()<0.5;  
+  enemies.push({x:fromLeft?-40:c.width+40,y:c.height-groundHeight-32,w:32,h:32,dir:fromLeft?1:-1,frame:0});  
+}  
+function spawnItem(){  
+  let type=Math.random()<0.5?"heart":"ammo";  
+  items.push({x:Math.random()*(c.width-30),y:c.height-groundHeight-24,w:24,h:24,type:type});  
+}  
+
+function killEnemy(i){ enemies.splice(i,1); score++; scoreSpan.innerText=score;  
+if(score>highScore){ highScore=score; highSpan.innerText=highScore; localStorage.setItem("fikiHighScore_"+level,highScore); }}  
+
+function damage(){ lives--; livesSpan.innerText=lives; player.x=c.width/2; player.y=c.height-groundHeight-50; if(lives<=0){ gameOver=true; overlay.style.display="flex"; bgMusic.pause(); } }  
+
+function draw(){  
+  ctx.clearRect(0,0,c.width,c.height);  
+  let g=ctx.createLinearGradient(0,0,0,c.height);  
+  g.addColorStop(0,"#60a5fa"); g.addColorStop(1,"#93c5fd");  
+  ctx.fillStyle=g; ctx.fillRect(0,0,c.width,c.height);  
+  ctx.fillStyle="#166534"; ctx.fillRect(0,c.height-groundHeight,c.width,groundHeight);  
+  drawPlayer(); drawEnemies(); drawBullets(); drawItems();  
+}  
+
+function drawPlayer(){  
+  ctx.save(); ctx.translate(player.x,player.y); ctx.scale(player.dir,1);  
+  let walk=Math.floor(frame/8)%2;  
+  ctx.fillStyle="#f5d0a9"; ctx.fillRect(8,0,18,18);  
+  ctx.fillStyle="#22c55e"; ctx.fillRect(6,18,22,18);  
+  ctx.fillRect(0,20,6,14-walk*4); ctx.fillRect(28,20,6,14-walk*4);  
+  ctx.fillRect(6,36,8,14-walk*4); ctx.fillRect(18,36+walk*4,8,14-walk*4);  
+  ctx.restore();  
+}  
+
+function drawEnemies(){ enemies.forEach(e=>{  
+  let a=Math.floor(e.frame/10)%2;  
+  ctx.fillStyle="#7c2d12"; ctx.fillRect(e.x,e.y,e.w,e.h);  
+  if(a){ ctx.fillRect(e.x+4,e.y+26,8,6); ctx.fillRect(e.x+20,e.y+26,8,6); }  
+}); }  
+
+function drawBullets(){ ctx.fillStyle="yellow"; bullets.forEach(b=>ctx.fillRect(b.x,b.y,6,4)); }  
+function drawItems(){ items.forEach(it=>{ ctx.fillStyle=it.type==="heart"?"red":"gold"; ctx.fillRect(it.x,it.y,it.w,it.h); }); }  
+function hit(a,b){ return a.x<b.x+b.w && a.x+a.w>b.x && a.y<b.y+b.h && a.y+a.h>b.y; }  
+
+const livesSpan=document.getElementById("lives");  
+const ammoSpan=document.getElementById("ammo");  
+const scoreSpan=document.getElementById("score");  
+const highSpan=document.getElementById("highscore");  
+</script>  
+</body>  
+</html>
